@@ -1,0 +1,350 @@
+// ElevateHer Backend - Prisma Schema
+// Covers: Auth/Onboarding (User) + Learn (Course, Enrollment)
+// + Earn (Job, Application, Review) + Flourish (Product, Order, OrderItem)
+// Payment integration (Razorpay/UPI) will be layered on top of Order in Phase 2.
+// Note: Using String instead of enum keeps the public API simple and portable.
+// Allowed Role values: LEARNER, EMPLOYER, SELLER, ADMIN
+// Allowed CourseLevel values: BEGINNER, INTERMEDIATE, ADVANCED
+// Allowed JobType values: FULL_TIME, PART_TIME, CONTRACT, GIG
+// Allowed ApplicationStatus values: PENDING, SHORTLISTED, REJECTED, HIRED
+// Allowed OrderStatus values: PLACED, CONFIRMED, SHIPPED, DELIVERED, CANCELLED
+// Allowed PaymentStatus values: PENDING, PAID, FAILED
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  phone        String   @unique
+  email        String?  @unique
+  passwordHash String
+  language     String   @default("en")
+  location     String?
+  role         String   @default("LEARNER") // LEARNER | EMPLOYER | SELLER | ADMIN
+  verified     Boolean  @default(false)
+
+  employerVerified Boolean @default(false)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  enrollments   Enrollment[]
+  coursesTaught Course[]     @relation("MentorCourses")
+
+  jobsPosted      Job[]         @relation("EmployerJobs")
+  applications    Application[]
+  reviewsGiven    Review[]      @relation("ReviewsGiven")
+  reviewsReceived Review[]      @relation("ReviewsReceived")
+  resume          Resume?
+
+  productsListed Product[] @relation("SellerProducts")
+  orders         Order[]   @relation("BuyerOrders")
+
+  quizAttempts   QuizAttempt[]
+  courseReviews  CourseReview[]
+  productReviews ProductReview[]
+  cart           Cart?
+
+  @@map("users")
+}
+
+model Course {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  category    String
+  language    String       @default("hi")
+  level       String       @default("BEGINNER")
+  mediaUrl    String?
+  duration    Int          @default(0)
+  mentorId    String?
+  mentor      User?        @relation("MentorCourses", fields: [mentorId], references: [id])
+  isPublished Boolean      @default(false)
+
+  // Creator marketplace: any user can submit a course; admin reviews it.
+  // Admin-created courses go straight to APPROVED (see controller logic).
+  price        Float  @default(0) // 0 = free course
+  reviewStatus String @default("PENDING") // PENDING | APPROVED | REJECTED
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  enrollments Enrollment[]
+  quizzes     Quiz[]
+  reviews     CourseReview[]
+
+  @@map("courses")
+}
+
+model Enrollment {
+  id             String    @id @default(uuid())
+  userId         String
+  courseId       String
+  progress       Int       @default(0)
+  completedAt    DateTime?
+  certificateUrl String?
+  enrolledAt     DateTime  @default(now())
+
+  // Payment tracking for paid courses. Free courses (price 0) are FREE immediately.
+  paymentStatus     String  @default("FREE") // FREE | PENDING | PAID | FAILED
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String?
+  razorpaySignature String?
+
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
+
+model Job {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  category    String
+  location    String?
+  jobType     String   @default("FULL_TIME")
+  salaryMin   Int?
+  salaryMax   Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employerId String
+  employer   User   @relation("EmployerJobs", fields: [employerId], references: [id])
+
+  applications Application[]
+  reviews      Review[]
+
+  @@map("jobs")
+}
+
+model Application {
+  id        String   @id @default(uuid())
+  jobId     String
+  userId    String
+  status    String   @default("PENDING")
+  coverNote String?
+  appliedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job  Job  @relation(fields: [jobId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  interview Interview?
+
+  @@unique([jobId, userId])
+  @@map("applications")
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  jobId      String
+  reviewerId String
+  revieweeId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  job      Job  @relation(fields: [jobId], references: [id])
+  reviewer User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee User @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  @@unique([jobId, reviewerId, revieweeId])
+  @@map("reviews")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  category    String
+  price       Float
+  stock       Int      @default(0)
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sellerId String
+  seller   User   @relation("SellerProducts", fields: [sellerId], references: [id])
+
+  orderItems OrderItem[]
+  reviews    ProductReview[]
+  cartItems  CartItem[]
+
+  @@map("products")
+}
+
+model Order {
+  id              String   @id @default(uuid())
+  buyerId         String
+  totalAmount     Float
+  status          String   @default("PLACED") // PLACED | CONFIRMED | SHIPPED | DELIVERED | CANCELLED
+  paymentStatus   String   @default("PENDING") // PENDING | PAID | FAILED
+  shippingAddress String?
+
+  // Razorpay payment tracking
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String?
+  razorpaySignature String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  buyer User @relation("BuyerOrders", fields: [buyerId], references: [id])
+
+  items OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String @id @default(uuid())
+  orderId         String
+  productId       String
+  quantity        Int
+  priceAtPurchase Float // snapshot of product price when order was placed
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model Quiz {
+  id           String   @id @default(uuid())
+  courseId     String
+  title        String
+  passingScore Int      @default(70) // percentage required to pass
+  createdAt    DateTime @default(now())
+
+  course    Course        @relation(fields: [courseId], references: [id])
+  questions Question[]
+  attempts  QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model Question {
+  id                 String @id @default(uuid())
+  quizId             String
+  questionText       String
+  optionsJson        String // JSON-stringified array of option strings, e.g. ["A","B","C","D"]
+  correctOptionIndex Int // index into optionsJson array
+
+  quiz Quiz @relation(fields: [quizId], references: [id])
+
+  @@map("questions")
+}
+
+model QuizAttempt {
+  id          String   @id @default(uuid())
+  quizId      String
+  userId      String
+  score       Int // percentage scored
+  passed      Boolean
+  answersJson String // JSON-stringified array of the option indices the user picked
+  attemptedAt DateTime @default(now())
+
+  quiz Quiz @relation(fields: [quizId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("quiz_attempts")
+}
+
+model CourseReview {
+  id        String   @id @default(uuid())
+  courseId  String
+  userId    String
+  rating    Int // 1 to 5
+  comment   String?
+  createdAt DateTime @default(now())
+
+  course Course @relation(fields: [courseId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([courseId, userId])
+  @@map("course_reviews")
+}
+
+model Resume {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  bio                String?
+  skillsJson         String? // JSON-stringified array of strings, e.g. ["Stitching","Embroidery"]
+  experienceJson     String? // JSON-stringified array of { title, company, startDate, endDate, description }
+  educationJson      String? // JSON-stringified array of { institution, degree, year }
+  portfolioLinksJson String? // JSON-stringified array of URLs
+  resumeFileUrl      String? // optional uploaded PDF resume (via /api/upload)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("resumes")
+}
+
+model Interview {
+  id            String   @id @default(uuid())
+  applicationId String   @unique
+  scheduledAt   DateTime
+  mode          String   @default("ONLINE") // ONLINE | IN_PERSON | PHONE
+  location      String? // meeting link (ONLINE) or address (IN_PERSON) or phone number
+  status        String   @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELLED | RESCHEDULED
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id])
+
+  @@map("interviews")
+}
+
+model ProductReview {
+  id        String   @id @default(uuid())
+  productId String
+  userId    String
+  rating    Int // 1 to 5
+  comment   String?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([productId, userId])
+  @@map("product_reviews")
+}
+
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id])
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int
+
+  cart    Cart    @relation(fields: [cartId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
