@@ -1,88 +1,133 @@
-ElevateHer Frontend
+# 🌸 ElevateHer Frontend
 
-Modern React frontend for the ElevateHer platform. It provides a responsive user interface for learning, job discovery, marketplace, authentication, and user profile management while communicating with the Express backend through REST APIs.
+A modern, responsive frontend for **ElevateHer** built with **React + TypeScript**.  
+Designed to deliver a seamless experience across **Learning, Jobs, Marketplace, Resume Builder, and User Authentication**, while integrating with the Express backend and ML services.
 
-Tech Stack
-React 19
-TypeScript
-Vite
-Tailwind CSS
-TanStack Router
-TanStack Query (React Query)
-Shadcn/UI
-ESLint
-Prettier
-npm
-Setup
+---
 
-Install dependencies
+## ✨ Tech Stack
 
-npm install
+| Technology | Purpose |
+|------------|---------|
+| ⚛️ React 19 | Component-based UI |
+| 🟦 TypeScript | Type Safety |
+| ⚡ Vite | Fast Development & Build Tool |
+| 🎨 Tailwind CSS | Utility-first Styling |
+| 🧩 shadcn/ui | Beautiful UI Components |
+| 🛣️ TanStack Router | Client-side Routing |
+| 🔄 TanStack Query | API Fetching & Caching |
+| 🧹 ESLint | Code Quality |
+| 💅 Prettier | Code Formatting |
 
-Create a .env file
+---
 
-VITE_API_URL=http://localhost:5000
+## 📁 Project Structure
 
-Start the development server
-
-npm run dev
-
-Frontend runs at
-
-http://localhost:5173
-Features
-User Authentication
-Onboarding Flow
-Course Discovery & Learning
-Job Listings & Applications
-Marketplace
-Resume Management
-Profile Dashboard
-Responsive UI
-REST API Integration
-JWT Authentication
-Payment Integration Support
-Project Structure
+```text
 src/
- ├── components/
- ├── pages/
- ├── routes/
- ├── hooks/
- ├── services/
- ├── lib/
- ├── assets/
- └── styles/
-Backend Integration
+├── components/
+├── pages/
+├── routes/
+├── hooks/
+├── services/
+├── lib/
+├── assets/
+└── styles/
+```
+
+---
+
+## 🚀 Getting Started
+
+### 1️⃣ Install Dependencies
+
+```bash
+npm install
+```
+
+### 2️⃣ Create Environment File
+
+```env
+VITE_API_URL=http://localhost:5000
+```
+
+### 3️⃣ Start Development Server
+
+```bash
+npm run dev
+```
+
+The application will be available at:
+
+```
+http://localhost:5173
+```
+
+---
+
+## 🎯 Features
+
+- 🔐 Authentication & Authorization
+- 👤 User Onboarding
+- 📚 Learning Portal
+- 💼 Job Listings & Applications
+- 🛍️ Marketplace
+- 📄 Resume Builder
+- 📊 User Dashboard
+- 💳 Razorpay Payment Integration
+- 📱 Responsive Design
+- ⚡ Fast Client-side Routing
+- 🔄 Real-time API Fetching & Caching
+
+---
+
+## 🔗 Backend Integration
 
 The frontend communicates with the Express backend using REST APIs.
 
-Backend URL
-
-http://localhost:5000
-
-Example Environment Variable
-
+```env
 VITE_API_URL=http://localhost:5000
-Development
+```
 
-Run development server
+Integrated Services:
 
+- 🚀 Express Backend
+- 🐘 PostgreSQL (via Backend)
+- 🤖 FastAPI ML Service
+- 💳 Razorpay
+- 🔐 JWT Authentication
+
+---
+
+## 🛠️ Available Scripts
+
+```bash
+# Start development server
 npm run dev
 
-Build production version
-
+# Production build
 npm run build
 
-Preview production build
-
+# Preview production build
 npm run preview
 
-Lint project
-
+# Lint project
 npm run lint
-Connected Services
-Express Backend
-PostgreSQL Database (via Backend)
-FastAPI ML Service
-Razorpay Payment Gateway
-JWT Authentication
+```
+
+---
+
+## 💙 Built With
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- TanStack Ecosystem
+- shadcn/ui
+
+---
+
+<p align="center">
+Made with ❤️ for <b>ElevateHer</b>
+</p>
