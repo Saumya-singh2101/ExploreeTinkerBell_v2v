@@ -16,7 +16,7 @@ const {
  */
 async function listProducts(req, res) {
   try {
-    const { category, sellerId } = req.query;
+    const { q, category, sellerId } = req.query;
 
     let products = await prisma.product.findMany({
       where: {
@@ -30,9 +30,13 @@ async function listProducts(req, res) {
       orderBy: { createdAt: "desc" },
     });
 
-    if (category && products.length > 0) {
+    // Rank by relevance using the existing ML search service. A free-text `q`
+    // (from the marketplace search box) takes priority; otherwise fall back to the
+    // selected category, preserving the previous behaviour.
+    const searchQuery = q || category;
+    if (searchQuery && products.length > 0) {
       const mlResult = await search({
-        query: category,
+        query: searchQuery,
         candidates: products.map(buildProductCandidate),
         limit: products.length,
       });

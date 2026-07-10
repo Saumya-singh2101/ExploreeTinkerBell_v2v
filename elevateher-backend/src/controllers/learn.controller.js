@@ -6,6 +6,7 @@ const {
   buildCourseCandidate,
   orderByMlIds,
   recommendCourses,
+  search,
 } = require("../services/ml.service");
 
 // ---------- COURSES ----------
@@ -17,7 +18,7 @@ const {
  */
 async function listCourses(req, res) {
   try {
-    const { category, language } = req.query;
+    const { q, category, language } = req.query;
 
     let courses = await prisma.course.findMany({
       where: {
@@ -42,6 +43,20 @@ async function listCourses(req, res) {
         Array.isArray(mlResult.recommendations)
           ? mlResult.recommendations.map((item) => item.id)
           : []
+      );
+    }
+
+    // Free-text search: rank the (already filtered) courses by relevance to the
+    // query using the existing ML search service.
+    if (q && courses.length > 0) {
+      const mlSearch = await search({
+        query: q,
+        candidates: courses.map(buildCourseCandidate),
+        limit: courses.length,
+      });
+      courses = orderByMlIds(
+        courses,
+        Array.isArray(mlSearch.results) ? mlSearch.results.map((item) => item.id) : []
       );
     }
 

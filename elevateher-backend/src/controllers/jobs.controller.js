@@ -4,6 +4,7 @@ const {
   matchJobScore,
   orderByMlIds,
   recommendJobs,
+  search,
 } = require("../services/ml.service");
 
 /**
@@ -13,7 +14,7 @@ const {
  */
 async function listJobs(req, res) {
   try {
-    const { category, location, jobType } = req.query;
+    const { q, category, location, jobType } = req.query;
 
     let jobs = await prisma.job.findMany({
       where: {
@@ -62,6 +63,20 @@ async function listJobs(req, res) {
           .sort((a, b) => b.score - a.score || a.index - b.index)
           .map(({ job }) => job);
       }
+    }
+
+    // Free-text search: rank the (already filtered) jobs by relevance to the query
+    // using the existing ML search service.
+    if (q && jobs.length > 0) {
+      const mlSearch = await search({
+        query: q,
+        candidates: jobs.map(buildJobCandidate),
+        limit: jobs.length,
+      });
+      jobs = orderByMlIds(
+        jobs,
+        Array.isArray(mlSearch.results) ? mlSearch.results.map((item) => item.id) : []
+      );
     }
 
     return res.status(200).json({ success: true, data: { jobs } });
