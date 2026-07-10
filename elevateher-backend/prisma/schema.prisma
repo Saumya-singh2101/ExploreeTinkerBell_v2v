@@ -56,6 +56,7 @@ model User {
   cart           Cart?
   notifications  Notification[]
   refreshTokens  RefreshToken[]
+  savedJobs      SavedJob[]
 
   @@map("users")
 }
@@ -153,8 +154,24 @@ model Job {
 
   applications Application[]
   reviews      Review[]
+  savedBy      SavedJob[]
 
   @@map("jobs")
+}
+
+// A learner's saved/bookmarked job (Phase 3).
+model SavedJob {
+  id        String   @id @default(uuid())
+  userId    String
+  jobId     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  job  Job  @relation(fields: [jobId], references: [id])
+
+  @@unique([userId, jobId])
+  @@index([userId])
+  @@map("saved_jobs")
 }
 
 model Application {

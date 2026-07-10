@@ -1,5 +1,16 @@
 const Razorpay = require("razorpay");
 
+// Lazy Razorpay client.
+//
+// The credentials come from .env — never hardcode keys here. RAZORPAY_KEY_ID and
+// RAZORPAY_KEY_SECRET come from the Razorpay dashboard (use Test Mode keys while
+// developing).
+//
+// Why lazy: the previous version constructed the client at import time, which threw
+// (`key_id or oauthToken is mandatory`) and crashed the whole backend on boot when
+// payment keys were absent. Payments are not required to run the rest of the app, so
+// the client is now created on first use instead. The public interface is unchanged —
+// callers still use `razorpay.orders.create(...)` — so no payment code needs to change.
 
 let instance = null;
 

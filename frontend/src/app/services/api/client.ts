@@ -86,13 +86,18 @@ api.interceptors.response.use(
       }
       isRefreshing = true;
       try {
-        const { data } = await axios.post<{ token: string; refresh_token?: string }>(
-          `${API_BASE_URL}/auth/refresh`,
-          { refresh_token: refresh },
-        );
-        tokenStore.set(data.token, data.refresh_token);
-        flushQueue(data.token);
-        original.headers.set("Authorization", `Bearer ${data.token}`);
+        // Raw axios (not `api`) to avoid re-entering this interceptor. The backend
+        // wraps the payload in `{ success, data }`, so unwrap it here.
+        const { data: body } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+          refresh_token: refresh,
+        });
+        const payload = (body && typeof body === "object" && "data" in body ? body.data : body) as {
+          token: string;
+          refresh_token?: string;
+        };
+        tokenStore.set(payload.token, payload.refresh_token);
+        flushQueue(payload.token);
+        original.headers.set("Authorization", `Bearer ${payload.token}`);
         return api(original);
       } catch (e) {
         flushQueue(null);

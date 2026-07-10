@@ -17,6 +17,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { coursesApi } from "@/app/services/api/endpoints";
 import { unwrapError } from "@/app/services/api/client";
 import { useAuthStore } from "@/app/store/auth";
+import { openRazorpayCheckout } from "../lib/razorpay";
+import { CourseReviews } from "../components/CourseReviews";
 import { PageMotion } from "../components/PageMotion";
 import { ListSkeleton, LineSkeleton } from "../components/Skeletons";
 import { EmptyState } from "../components/EmptyState";
@@ -151,6 +153,7 @@ export function CourseDetailPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const authed = useAuthStore((s) => s.status === "authenticated");
+  const user = useAuthStore((s) => s.user);
 
   const query = useQuery({
     queryKey: ["course", id],
@@ -162,11 +165,49 @@ export function CourseDetailPage() {
     queryFn: coursesApi.myCourses,
     enabled: authed,
   });
+  const lessonsQuery = useQuery({
+    queryKey: ["lessons", id],
+    queryFn: () => coursesApi.lessons(id!),
+    enabled: !!id && authed,
+  });
+
+  // Paid courses: after enroll the backend returns requiresPayment; open Razorpay,
+  // then verify server-side to unlock. Free courses complete immediately.
+  const startPayment = async (enrollmentId: string, courseTitle: string) => {
+    try {
+      const order = await coursesApi.createPayment(enrollmentId);
+      await openRazorpayCheckout({
+        order,
+        description: courseTitle,
+        prefill: { name: user?.name, contact: user?.phone, email: user?.email },
+        onSuccess: async (r) => {
+          try {
+            await coursesApi.verifyPayment(enrollmentId, {
+              razorpayOrderId: r.razorpay_order_id,
+              razorpayPaymentId: r.razorpay_payment_id,
+              razorpaySignature: r.razorpay_signature,
+            });
+            void qc.invalidateQueries({ queryKey: ["my-courses"] });
+            toast.success("Payment successful — course unlocked 🎉");
+          } catch (e) {
+            toast.error(unwrapError(e).message);
+          }
+        },
+      });
+    } catch (e) {
+      toast.error(unwrapError(e).message);
+    }
+  };
+
   const enrollMutation = useMutation({
     mutationFn: () => coursesApi.enroll(id!),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       void qc.invalidateQueries({ queryKey: ["my-courses"] });
-      toast.success(res.requiresPayment ? "Enrolled — payment required to start" : "Enrolled successfully 🎉");
+      if (res.requiresPayment && res.enrollment?.id) {
+        await startPayment(res.enrollment.id, query.data?.title ?? "Course");
+      } else {
+        toast.success("Enrolled successfully 🎉");
+      }
     },
     onError: (e) => toast.error(unwrapError(e).message),
   });
@@ -235,30 +276,28 @@ export function CourseDetailPage() {
               )}
             </TabsContent>
             <TabsContent value="syllabus" className="mt-6 space-y-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary text-sm font-semibold">{i + 1}</div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">Lesson {i + 1}: Foundations</div>
-                    <div className="text-xs text-muted-foreground">12 min · Video + Reading</div>
+              {lessonsQuery.isLoading ? (
+                <LineSkeleton lines={4} />
+              ) : !lessonsQuery.data || lessonsQuery.data.length === 0 ? (
+                <EmptyState title="No lessons yet" description={authed ? "The creator hasn't added lessons to this course." : "Sign in to view the lessons."} />
+              ) : (
+                lessonsQuery.data.map((l, i) => (
+                  <div key={l.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary text-sm font-semibold">{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{l.title}</div>
+                      {l.content && <div className="text-xs text-muted-foreground line-clamp-1">{l.content}</div>}
+                    </div>
+                    <Play className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <Play className="h-4 w-4 text-muted-foreground" />
-                </div>
-              ))}
+                ))
+              )}
             </TabsContent>
             <TabsContent value="discussion" className="mt-6">
               <EmptyState title="Be the first to start a thread." description="Ask a question or share what you're building." />
             </TabsContent>
-            <TabsContent value="reviews" className="mt-6 space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-border bg-card p-5">
-                  <div className="flex items-center gap-2">
-                    {Array.from({ length: 5 }).map((_, j) => <Star key={j} className="h-3.5 w-3.5 fill-warning text-warning" />)}
-                  </div>
-                  <p className="mt-2 text-sm">Absolutely loved this. It felt like a mentor was walking me through everything.</p>
-                  <div className="mt-3 text-xs text-muted-foreground">— Learner {i + 1}</div>
-                </div>
-              ))}
+            <TabsContent value="reviews" className="mt-6">
+              <CourseReviews courseId={course.id} canReview={enrolled} />
             </TabsContent>
           </Tabs>
         </div>
@@ -275,6 +314,11 @@ export function CourseDetailPage() {
                 </div>
                 <Progress value={enrollment!.progress} className="h-2" />
                 <div className="text-xs text-muted-foreground">{enrollment!.progress}% complete</div>
+                <Button asChild className="mt-2 w-full rounded-full gradient-primary text-primary-foreground">
+                  <Link to={`/app/learn/${course.id}/learn`}>
+                    <Play className="h-3.5 w-3.5 mr-1" /> {enrollment!.progress > 0 ? "Continue learning" : "Start learning"}
+                  </Link>
+                </Button>
               </div>
             ) : (
               <Button

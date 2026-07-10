@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Search, Star, ShoppingBag, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
-  Upload, Sparkles, Check, MapPin, Heart, Truck,
+  Upload, Sparkles, Check, MapPin, Heart, Truck, Store,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,16 +18,23 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { productsApi, mlApi, ordersApi } from "@/app/services/api/endpoints";
 import { unwrapError } from "@/app/services/api/client";
 import { useCartStore } from "@/app/store/cart";
+import { useAuthStore } from "@/app/store/auth";
+import { payForOrder } from "../lib/orderPayment";
 import { PageMotion } from "../components/PageMotion";
 import { ListSkeleton } from "../components/Skeletons";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
+import { ImageUploader } from "../components/ImageUploader";
+import { ProductReviews } from "../components/ProductReviews";
 import type { Product } from "@/app/types";
 
 const cats = ["all", "Textiles", "Jewellery", "Home", "Beauty", "Food", "Art"];
 
 export function MarketplacePage() {
   const { t } = useTranslation();
+  const user = useAuthStore((s) => s.user);
+  const authed = useAuthStore((s) => s.status === "authenticated");
+  const isSeller = user?.role === "seller" || user?.role === "all";
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
 
@@ -35,6 +42,13 @@ export function MarketplacePage() {
     queryKey: ["products", q, cat],
     queryFn: () => productsApi.list({ q, category: cat === "all" ? undefined : cat }),
   });
+  // Personalized recommendations only shown on the default (unfiltered) view.
+  const recQuery = useQuery({
+    queryKey: ["product-recommendations"],
+    queryFn: productsApi.recommended,
+    enabled: authed,
+  });
+  const showRecommendations = authed && !q && cat === "all" && (recQuery.data?.length ?? 0) > 0;
 
   // Text relevance is ranked server-side by the ML search service (query `q` is sent
   // to the backend); the client only applies the exact-match category facet.
@@ -48,9 +62,21 @@ export function MarketplacePage() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{t("flourish.title")}</h1>
           <p className="mt-1 text-muted-foreground">{t("flourish.subtitle")}</p>
         </div>
-        <Button asChild className="rounded-full gradient-primary text-primary-foreground shadow shrink-0">
-          <Link to="/app/flourish/upload"><Upload className="h-4 w-4 mr-1" /> {t("flourish.upload")}</Link>
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button asChild variant="outline" className="rounded-full">
+            <Link to="/app/orders"><ShoppingBag className="h-4 w-4 mr-1" /> My Orders</Link>
+          </Button>
+          {isSeller && (
+            <>
+              <Button asChild variant="outline" className="rounded-full">
+                <Link to="/app/flourish/mine"><Store className="h-4 w-4 mr-1" /> My Shop</Link>
+              </Button>
+              <Button asChild className="rounded-full gradient-primary text-primary-foreground shadow">
+                <Link to="/app/flourish/upload"><Upload className="h-4 w-4 mr-1" /> {t("flourish.upload")}</Link>
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="relative">
@@ -82,6 +108,20 @@ export function MarketplacePage() {
         </div>
       </Card>
 
+      {showRecommendations && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <h2 className="text-lg font-semibold">Recommended for you</h2>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {(recQuery.data ?? []).slice(0, 4).map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {query.isLoading ? <ListSkeleton count={8} /> : filtered.length === 0 ? (
         <EmptyState icon={ShoppingBag} title="No products found" />
       ) : (
@@ -102,7 +142,10 @@ function ProductCard({ product }: { product: Product }) {
   return (
     <Card className="group overflow-hidden rounded-3xl border-border bg-card hover-lift h-full">
       <Link to={`/app/flourish/${product.id}`}>
-        <div className="relative aspect-square gradient-aurora">
+        <div className="relative aspect-square gradient-aurora overflow-hidden">
+          {product.images?.[0] && (
+            <img src={product.images[0]} alt={product.name} className="absolute inset-0 h-full w-full object-cover" />
+          )}
           <button
             aria-label="Wishlist"
             onClick={(e) => { e.preventDefault(); toast.success("Saved to wishlist ♥"); }}
@@ -166,20 +209,30 @@ export function ProductDetailPage() {
 
       <div className="grid gap-10 lg:grid-cols-2">
         <div className="space-y-3">
-          <div className="aspect-square rounded-3xl overflow-hidden gradient-aurora" />
-          <div className="grid grid-cols-4 gap-3">
-            {[0,1,2,3].map((i) => (
-              <div key={i} className="aspect-square rounded-2xl gradient-aurora opacity-70 cursor-pointer hover:opacity-100 transition" />
-            ))}
+          <div className="aspect-square rounded-3xl overflow-hidden gradient-aurora">
+            {product.images?.[0] && (
+              <img src={product.images[0]} alt={product.name} className="h-full w-full object-cover" />
+            )}
           </div>
+          {product.images && product.images.length > 1 && (
+            <div className="grid grid-cols-4 gap-3">
+              {product.images.slice(0, 4).map((src, i) => (
+                <div key={i} className="aspect-square rounded-2xl overflow-hidden gradient-aurora">
+                  <img src={src} alt={`${product.name} ${i + 1}`} className="h-full w-full object-cover" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <Badge variant="secondary" className="rounded-full">{product.category}</Badge>
           <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">{product.name}</h1>
-          <div className="mt-3 flex items-center gap-3 text-sm">
-            <span className="flex items-center gap-1"><Star className="h-4 w-4 fill-warning text-warning" /> {product.rating?.toFixed(1)}</span>
-            <span className="text-muted-foreground">({product.reviews_count} reviews)</span>
-          </div>
+          {product.rating != null && (
+            <div className="mt-3 flex items-center gap-3 text-sm">
+              <span className="flex items-center gap-1"><Star className="h-4 w-4 fill-warning text-warning" /> {product.rating.toFixed(1)}</span>
+              {product.reviews_count != null && <span className="text-muted-foreground">({product.reviews_count} reviews)</span>}
+            </div>
+          )}
           <div className="mt-6 text-4xl font-bold">₹{product.price}</div>
           <p className="mt-4 text-sm text-muted-foreground leading-relaxed">{product.description}</p>
 
@@ -221,6 +274,10 @@ export function ProductDetailPage() {
             </div>
           </Card>
         </div>
+      </div>
+
+      <div className="max-w-2xl">
+        <ProductReviews productId={product.id} />
       </div>
     </PageMotion>
   );
@@ -303,10 +360,10 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 }
 
 export function CheckoutPage() {
-  const { t } = useTranslation();
   const items = useCartStore((s) => s.items);
   const total = useCartStore((s) => s.total());
   const clear = useCartStore((s) => s.clear);
+  const user = useAuthStore((s) => s.user);
   const [placing, setPlacing] = useState(false);
   const [done, setDone] = useState(false);
   const navigate = useNavigate();
@@ -318,14 +375,32 @@ export function CheckoutPage() {
       .map((v) => (v ? String(v).trim() : ""))
       .filter(Boolean)
       .join(", ");
+    const buyerName = String(fd.get("fullName") ?? "").trim() || user?.name;
+    const buyerPhone = String(fd.get("phone") ?? "").trim() || user?.phone;
+    const buyerEmail = String(fd.get("email") ?? "").trim() || user?.email;
+
     setPlacing(true);
     try {
-      await ordersApi.create({
+      // Create the order first (this owns the cart items + snapshots price/stock),
+      // then drive the Razorpay payment against it. The cart is cleared once the
+      // order exists; unpaid orders can be completed later from the Orders page.
+      const order = await ordersApi.create({
         items: items.map((i) => ({ product_id: i.product.id, qty: i.qty })),
         shippingAddress,
       });
-      setDone(true);
       clear();
+      await payForOrder(order.id, {
+        description: "Marketplace order",
+        prefill: { name: buyerName, contact: buyerPhone, email: buyerEmail },
+        onSuccess: () => {
+          setDone(true);
+          toast.success("Payment successful 🎉");
+        },
+        onDismiss: () => {
+          toast.message("Order placed — payment pending. Complete it from Orders.");
+          navigate("/app/orders");
+        },
+      });
     } catch (err) {
       toast.error(unwrapError(err).message);
     } finally {
@@ -341,7 +416,10 @@ export function CheckoutPage() {
         </div>
         <h1 className="mt-6 text-3xl font-bold">Order placed 🎉</h1>
         <p className="mt-2 text-muted-foreground">You'll receive updates on your notifications tab.</p>
-        <Button onClick={() => navigate("/app/dashboard")} className="mt-8 rounded-full gradient-primary text-primary-foreground">Back to dashboard</Button>
+        <div className="mt-8 flex justify-center gap-3">
+          <Button onClick={() => navigate("/app/orders")} className="rounded-full gradient-primary text-primary-foreground">View orders</Button>
+          <Button variant="outline" onClick={() => navigate("/app/flourish")} className="rounded-full">Keep shopping</Button>
+        </div>
       </PageMotion>
     );
   }
@@ -353,16 +431,16 @@ export function CheckoutPage() {
         <Card className="rounded-3xl border-border bg-card p-6 space-y-4">
           <div>
             <Label>Full name</Label>
-            <Input required className="mt-1.5 rounded-xl h-11" />
+            <Input name="fullName" defaultValue={user?.name} required className="mt-1.5 rounded-xl h-11" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label>Phone</Label>
-              <Input required className="mt-1.5 rounded-xl h-11" />
+              <Input name="phone" defaultValue={user?.phone} required className="mt-1.5 rounded-xl h-11" />
             </div>
             <div>
               <Label>Email</Label>
-              <Input required type="email" className="mt-1.5 rounded-xl h-11" />
+              <Input name="email" defaultValue={user?.email} required type="email" className="mt-1.5 rounded-xl h-11" />
             </div>
           </div>
           <div>
@@ -397,17 +475,34 @@ export function CheckoutPage() {
 }
 
 export function UploadProductPage() {
+  const { id } = useParams();
+  const isEdit = !!id;
   const { i18n } = useTranslation();
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Textiles");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [stock, setStock] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [materialCost, setMaterialCost] = useState("");
   const [hours, setHours] = useState("");
   const [genLoading, setGenLoading] = useState(false);
   const [pricingLoading, setPricingLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  // Edit mode: hydrate the form from the existing product.
+  const existing = useQuery({ queryKey: ["product", id], queryFn: () => productsApi.get(id!), enabled: isEdit });
+  useEffect(() => {
+    const p = existing.data;
+    if (!p) return;
+    setName(p.name);
+    setCategory(p.category);
+    setDescription(p.description);
+    setPrice(String(p.price));
+    setStock(p.stock != null ? String(p.stock) : "");
+    setImageUrl(p.images?.[0] ?? "");
+  }, [existing.data]);
 
   const generate = async () => {
     if (!name) { toast.error("Give your product a name first"); return; }
@@ -451,9 +546,30 @@ export function UploadProductPage() {
         toast.error(`Listing needs changes: ${moderation.reason}`);
         return;
       }
-      await productsApi.create({ name, category, description, price: Number(price) });
-      toast.success("Product listed 🎉");
-      navigate("/app/flourish");
+      // ML image moderation gate for uploaded product photos.
+      if (imageUrl) {
+        const imgMod = await mlApi.moderateImage(imageUrl);
+        if (imgMod.flagged) {
+          toast.error(`Image needs changes: ${imgMod.reason}`);
+          return;
+        }
+      }
+      const payload = {
+        name,
+        category,
+        description,
+        price: Number(price),
+        ...(stock !== "" && { stock: Number(stock) }),
+        ...(imageUrl && { imageUrl }),
+      };
+      if (isEdit) {
+        await productsApi.update(id!, payload);
+        toast.success("Product updated 🎉");
+      } else {
+        await productsApi.create(payload);
+        toast.success("Product listed 🎉");
+      }
+      navigate("/app/flourish/mine");
     } catch (err) {
       toast.error(unwrapError(err).message);
     } finally {
@@ -464,12 +580,21 @@ export function UploadProductPage() {
   return (
     <PageMotion className="space-y-8 max-w-3xl mx-auto">
       <div>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">List a new product</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{isEdit ? "Edit product" : "List a new product"}</h1>
         <p className="mt-1 text-muted-foreground">Our AI will help you write a beautiful description and suggest a fair price.</p>
       </div>
 
       <form onSubmit={submit} className="space-y-5">
         <Card className="rounded-3xl border-border bg-card p-6 space-y-4">
+          <div>
+            <Label>Product image</Label>
+            <div className="mt-1.5 flex items-center gap-4">
+              <div className="h-20 w-20 shrink-0 rounded-2xl overflow-hidden gradient-aurora">
+                {imageUrl && <img src={imageUrl} alt="Product" className="h-full w-full object-cover" />}
+              </div>
+              <ImageUploader label={imageUrl ? "Replace image" : "Upload image"} onUploaded={setImageUrl} />
+            </div>
+          </div>
           <div>
             <Label>Product name</Label>
             <Input required value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 rounded-xl h-11" />
@@ -512,10 +637,14 @@ export function UploadProductPage() {
             </div>
             <Input required type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="rounded-xl h-11" />
           </div>
+          <div>
+            <Label>Stock available</Label>
+            <Input type="number" min="0" value={stock} onChange={(e) => setStock(e.target.value)} placeholder="e.g. 10" className="mt-1.5 rounded-xl h-11" />
+          </div>
         </Card>
 
         <Button type="submit" size="lg" disabled={submitting} className="w-full rounded-full gradient-primary text-primary-foreground shadow hover:shadow-glow">
-          {submitting ? "Listing…" : "List product"}
+          {submitting ? (isEdit ? "Saving…" : "Listing…") : isEdit ? "Save changes" : "List product"}
         </Button>
       </form>
     </PageMotion>

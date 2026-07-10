@@ -36,6 +36,7 @@ export interface Course {
 export interface Job {
   id: string;
   title: string;
+  category?: string;
   company: { name: string; logo_url?: string; verified?: boolean };
   location: string;
   remote: boolean;
