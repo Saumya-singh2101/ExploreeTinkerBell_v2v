@@ -10,6 +10,8 @@ const marketplaceRoutes = require("./routes/marketplace.routes");
 const uploadRoutes = require("./routes/upload.routes");
 const resumeRoutes = require("./routes/resume.routes");
 const mlRoutes = require("./routes/ml.routes");
+const notificationRoutes = require("./routes/notification.routes");
+const userRoutes = require("./routes/user.routes");
 const app = express();
 
 // Core middleware
@@ -36,6 +38,8 @@ app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/ml", mlRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/user", userRoutes);
 // 404 handler - must stay LAST, after all real routes above
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
